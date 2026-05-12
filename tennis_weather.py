@@ -2,7 +2,7 @@
 import math
 import streamlit as st
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 st.set_page_config(page_title="Tennis Time Weather", page_icon="🎾", layout="wide")
 
@@ -28,6 +28,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# =========================================================
+# KST 시간 (Streamlit Cloud는 UTC → +9시간 보정 필수)
+# =========================================================
+KST = timezone(timedelta(hours=9))
+
+def now_kst() -> datetime:
+    return datetime.now(KST).replace(tzinfo=None)
+
+# =========================================================
+# 상수
+# =========================================================
 KMA_SERVICE_KEY = "Hn3PmYG7QWq9z5mBu7FqIg"
 KMA_FCST_URL  = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getVilageFcst"
 KMA_ULTRA_URL = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst"
@@ -40,14 +51,20 @@ TIME_SLOT_MAP = {
     "저녁 (19:00~22:00)": {"rep": 20, "start": 18, "end": 23},
 }
 
+# =========================================================
+# 사이드바
+# =========================================================
 with st.sidebar:
     st.title("🎾 Tennis Time")
     location  = st.text_input("📍 테니스장 위치", value="대구 북구 칠성동")
     day       = st.selectbox("📅 운동 요일", list(DAY_MAP.keys()), index=1)
     time_slot = st.selectbox("⏰ 시간대", list(TIME_SLOT_MAP.keys()), index=2)
     st.markdown("---")
-    st.caption("v0.7.0 — 초단기실황 + 초단기예보 + 단기예보 자동 선택")
+    st.caption("v0.8.0 — KST 시간 보정 + 초단기실황 안정화")
 
+# =========================================================
+# 위치 변환
+# =========================================================
 @st.cache_data(ttl=86400)
 def geocode(location: str):
     url = "https://nominatim.openstreetmap.org/search"
@@ -84,25 +101,39 @@ def latlon_to_grid(lat: float, lon: float) -> tuple[int, int]:
     if theta < -math.pi: theta += 2 * math.pi
     return int(ra*math.sin(theta) + XO + 1.5), int(ro - ra*math.cos(theta) + YO + 1.5)
 
+# =========================================================
+# 기준시각 계산 (모두 KST 기준)
+# =========================================================
 def get_base_datetime() -> tuple[str, str]:
-    now = datetime.now() - timedelta(minutes=10)
-    valid = [h for h in [2, 5, 8, 11, 14, 17, 20, 23] if h <= now.hour]
+    """단기예보: 매 3시간 발표, 10분 여유, KST 기준"""
+    t = now_kst() - timedelta(minutes=10)
+    valid = [h for h in [2, 5, 8, 11, 14, 17, 20, 23] if h <= t.hour]
     if valid:
-        return now.strftime("%Y%m%d"), f"{max(valid):02d}00"
-    return (now - timedelta(days=1)).strftime("%Y%m%d"), "2300"
+        return t.strftime("%Y%m%d"), f"{max(valid):02d}00"
+    return (t - timedelta(days=1)).strftime("%Y%m%d"), "2300"
 
 def get_ultra_base_datetime() -> tuple[str, str]:
-    now = datetime.now() - timedelta(minutes=10)
-    if now.minute >= 30:
-        return now.strftime("%Y%m%d"), f"{now.hour:02d}30"
-    h = now.hour - 1
-    d = now if h >= 0 else now - timedelta(days=1)
+    """초단기예보: 매시 30분 발표, 10분 여유, KST 기준"""
+    t = now_kst() - timedelta(minutes=10)
+    if t.minute >= 30:
+        return t.strftime("%Y%m%d"), f"{t.hour:02d}30"
+    h = t.hour - 1
+    d = t if h >= 0 else t - timedelta(days=1)
     return d.strftime("%Y%m%d"), f"{h % 24:02d}30"
 
 def get_ncst_base_datetime() -> tuple[str, str]:
-    now = datetime.now() - timedelta(minutes=10)
-    return now.strftime("%Y%m%d"), f"{now.hour:02d}00"
+    """초단기실황: 매시 정각 발표, 10분 여유, KST 기준"""
+    t = now_kst() - timedelta(minutes=10)
+    return t.strftime("%Y%m%d"), f"{t.hour:02d}00"
 
+def get_prev_ncst_base_datetime() -> tuple[str, str]:
+    """초단기실황 실패 시 한 시간 전 시각으로 재시도"""
+    t = now_kst() - timedelta(minutes=10) - timedelta(hours=1)
+    return t.strftime("%Y%m%d"), f"{t.hour:02d}00"
+
+# =========================================================
+# API 호출
+# =========================================================
 @st.cache_data(ttl=1800)
 def fetch_kma_forecast(nx, ny, base_date, base_time) -> dict | None:
     try:
@@ -135,16 +166,23 @@ def fetch_kma_ultra_forecast(nx, ny, base_date, base_time) -> dict | None:
 
 @st.cache_data(ttl=600)
 def fetch_kma_ncst(nx, ny, base_date, base_time) -> dict | None:
+    """초단기실황: 실패 시 None 반환"""
     try:
         r = requests.get(KMA_NCST_URL, params={
             "authKey": KMA_SERVICE_KEY, "pageNo": 1, "numOfRows": 100,
             "dataType": "JSON", "base_date": base_date, "base_time": base_time,
             "nx": nx, "ny": ny}, timeout=15)
-        return {item["category"]: item["obsrValue"]
-                for item in r.json()["response"]["body"]["items"]["item"]}
+        body = r.json().get("response", {}).get("body", {})
+        items = body.get("items", {})
+        if not items or items == "":
+            return None
+        return {item["category"]: item["obsrValue"] for item in items["item"]}
     except Exception:
         return None
 
+# =========================================================
+# 데이터 파싱
+# =========================================================
 def _feels_like(tmp, wsd):
     if tmp <= 10 and wsd >= 1.3:
         return 13.12 + 0.6215*tmp - 11.37*(wsd**0.16) + 0.3965*tmp*(wsd**0.16)
@@ -156,7 +194,7 @@ def _parse_precip(raw):
     except Exception:
         return 0.1 if raw != "강수없음" else 0.0
 
-SKY_MAP = {"1":"☀️ 맑음", "3":"⛅ 구름많음", "4":"☁️ 흐림"}
+SKY_MAP = {"1":"☀️ 맑음","3":"⛅ 구름많음","4":"☁️ 흐림"}
 PTY_MAP = {"0":"-","1":"🌧 비","2":"🌨 비/눈","3":"❄️ 눈","4":"🌦 소나기",
            "5":"🌧 빗방울","6":"🌨 빗방울/눈날림","7":"❄️ 눈날림"}
 
@@ -187,19 +225,25 @@ def extract_ultra_hour(forecast, target_date, hour) -> dict | None:
         return None
 
 def get_target_date(day_name: str) -> str:
-    today = datetime.now()
+    today = now_kst()
     return (today + timedelta(days=(DAY_MAP[day_name] - today.weekday()) % 7)).strftime("%Y-%m-%d")
 
+# =========================================================
+# 위치 조회
+# =========================================================
 lat, lon, place_name = geocode(location)
 if lat is None:
-    st.error(f"'{location}' 위치를 찾을 수 없습니다. 다른 지명으로 입력해 보세요.")
+    st.error(f"'{location}' 위치를 찾을 수 없습니다.")
     st.stop()
 
 nx, ny      = latlon_to_grid(lat, lon)
 target_date = get_target_date(day)
 slot        = TIME_SLOT_MAP[time_slot]
-now         = datetime.now()
+now         = now_kst()
 
+# =========================================================
+# 예보 종류 자동 선택
+# =========================================================
 target_dt  = datetime.strptime(f"{target_date} {slot['rep']:02d}:00", "%Y-%m-%d %H:%M")
 hours_diff = (target_dt - now).total_seconds() / 3600
 use_ultra  = (target_date == now.strftime("%Y-%m-%d")) and (0 <= hours_diff <= 6)
@@ -230,6 +274,9 @@ if weather is None:
 hourly_range = [w for h in range(slot["start"], slot["end"]+1)
                 if (w := extract_fn(forecast, target_date, h)) is not None]
 
+# =========================================================
+# 운동 점수
+# =========================================================
 def calculate_play_score(w: dict) -> int:
     score = 100
     if w["pty"] != "-":
@@ -250,6 +297,9 @@ elif play_score >= 65: play_status, status_message = "👍 양호", "무난하�
 elif play_score >= 45: play_status, status_message = "⚠️ 주의", "기상 상황을 확인하세요."
 else:                  play_status, status_message = "🌧 비추천", "실내 코트 예약을 권장합니다."
 
+# =========================================================
+# 드레스 코드
+# =========================================================
 def get_dress_code(w: dict) -> str:
     temp, wind = w["feels_like"], w["wind_speed"]
     if temp >= 28:   return "🩳 <b>반바지 + 반팔</b><br>통풍이 잘 되는 쿨링 소재를 적극 추천합니다."
@@ -259,14 +309,23 @@ def get_dress_code(w: dict) -> str:
         return "👖 <b>긴바지 + 긴팔 (또는 반팔+웜업 자켓)</b><br>가벼운 웜업용 겉옷으로 시작하기 좋은 날씨입니다."
     return "🥶 <b>긴바지 + 따뜻한 겉옷</b><br>충분히 몸이 풀리기 전까지 겉옷을 벗지 마세요."
 
+# =========================================================
+# 화면 출력
+# =========================================================
 st.title("🎾 테니스 타임 날씨 알리미")
 st.caption(
-    f"최종 업데이트: {now.strftime('%Y-%m-%d %H:%M')}  |  "
+    f"최종 업데이트: {now.strftime('%Y-%m-%d %H:%M')} KST  |  "
     f"예보 데이터: 기상청 {forecast_label}  |  발표: {base_date} {base_time}"
 )
 
+# ── 초단기실황 (현재 → 실패 시 1시간 전으로 재시도) ────
 ncst_date, ncst_time = get_ncst_base_datetime()
 ncst = fetch_kma_ncst(nx, ny, ncst_date, ncst_time)
+ncst_retry = False
+if ncst is None:
+    ncst_date, ncst_time = get_prev_ncst_base_datetime()
+    ncst = fetch_kma_ncst(nx, ny, ncst_date, ncst_time)
+    ncst_retry = True
 
 if ncst:
     n_tmp  = float(ncst.get("T1H", 0))
@@ -279,9 +338,11 @@ if ncst:
     dirs   = ["북","북동","동","남동","남","남서","서","북서","북"]
     n_dir  = dirs[round(n_vec / 45) % 8]
     rain_badge = f"🌧 {n_rn1}mm/h &nbsp;|&nbsp; {n_pty}" if n_pty != "-" else "☀️ 강수없음"
+    retry_note = " ⚠️ (1시간 전 데이터)" if ncst_retry else ""
     st.markdown(
         f'<div class="ncst-box">'
-        f'<b>📡 현재 실황</b> ({ncst_date[4:6]}월 {ncst_date[6:8]}일 {ncst_time[:2]}:00 기준)'
+        f'<b>📡 현재 실황{retry_note}</b>'
+        f' ({ncst_date[4:6]}월 {ncst_date[6:8]}일 {ncst_time[:2]}:00 KST 기준)'
         f'&nbsp;&nbsp;|&nbsp;&nbsp;'
         f'🌡️ <b>{n_tmp}°C</b> (체감 {n_feel}°C)'
         f'&nbsp;|&nbsp; 💨 {n_wsd}m/s ({n_dir})'
@@ -307,6 +368,7 @@ with col_sub:
     st.subheader("👕 드레스 코드")
     st.markdown(f'<div class="tip-box">{get_dress_code(weather)}</div>', unsafe_allow_html=True)
 
+# ── 시간별 예보 테이블 ────────────────────────────────────
 st.markdown("---")
 st.subheader(f"🌤 시간별 날씨 지표  ({slot['start']:02d}:00 ~ {slot['end']:02d}:00)")
 
@@ -347,4 +409,4 @@ else:
     """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Tennis Time Weather v0.7.0 — 초단기실황 + 초단기예보 + 단기예보 자동 선택")
+st.caption("Tennis Time Weather v0.8.0 — KST 시간 보정 + 초단기실황 안정화")
