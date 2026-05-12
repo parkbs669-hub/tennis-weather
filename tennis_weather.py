@@ -279,18 +279,22 @@ hourly_range = [w for h in range(slot["start"], slot["end"]+1)
 # =========================================================
 def calculate_play_score(w: dict) -> int:
     score = 100
-    if w["pty"] != "-":
-        score -= 60
+    if w["pty"] in HEAVY_PTY:       score -= 60   # 실제 비/눈
+    elif w["pty"] in LIGHT_PTY:     score -= 20   # 빗방울 (약한 수준)
     elif w["rain_prob"] is not None:
-        if w["rain_prob"] >= 70:   score -= 40
-        elif w["rain_prob"] >= 40: score -= 20
-    if w["wind_speed"] >= 8:   score -= 25
-    elif w["wind_speed"] >= 5: score -= 12
-    if w["humidity"] >= 85:    score -= 10
-    if "흐림" in w["sky"]:      score -= 5
+        if w["rain_prob"] >= 70:    score -= 40
+        elif w["rain_prob"] >= 40:  score -= 20
+    if w["wind_speed"] >= 8:        score -= 25
+    elif w["wind_speed"] >= 5:      score -= 12
+    if w["humidity"] >= 85:         score -= 10
+    if "흐림" in w["sky"]:           score -= 5
     return max(score, 0)
 
-play_score = calculate_play_score(weather)
+# 전체 시간대 평균으로 점수 계산
+if hourly_range:
+    play_score = int(sum(calculate_play_score(w) for w in hourly_range) / len(hourly_range))
+else:
+    play_score = calculate_play_score(weather)
 
 if play_score >= 85:   play_status, status_message = "🎾 최적", "경기하기 완벽한 날씨입니다!"
 elif play_score >= 65: play_status, status_message = "👍 양호", "무난하게 플레이 가능합니다."
