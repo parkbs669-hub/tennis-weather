@@ -277,10 +277,13 @@ hourly_range = [w for h in range(slot["start"], slot["end"]+1)
 # =========================================================
 # 운동 점수
 # =========================================================
+HEAVY_PTY = {"🌧 비", "🌨 비/눈", "❄️ 눈", "🌦 소나기"}
+LIGHT_PTY  = {"🌧 빗방울", "🌨 빗방울/눈날림", "❄️ 눈날림"}
+
 def calculate_play_score(w: dict) -> int:
     score = 100
-    if w["pty"] in HEAVY_PTY:       score -= 60   # 실제 비/눈
-    elif w["pty"] in LIGHT_PTY:     score -= 20   # 빗방울 (약한 수준)
+    if w["pty"] in HEAVY_PTY:       score -= 60
+    elif w["pty"] in LIGHT_PTY:     score -= 20
     elif w["rain_prob"] is not None:
         if w["rain_prob"] >= 70:    score -= 40
         elif w["rain_prob"] >= 40:  score -= 20
@@ -290,7 +293,6 @@ def calculate_play_score(w: dict) -> int:
     if "흐림" in w["sky"]:           score -= 5
     return max(score, 0)
 
-# 전체 시간대 평균으로 점수 계산
 if hourly_range:
     play_score = int(sum(calculate_play_score(w) for w in hourly_range) / len(hourly_range))
 else:
