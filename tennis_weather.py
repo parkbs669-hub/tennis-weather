@@ -1,4 +1,5 @@
-# 테니스 코트 위치·요일·시간대를 입력받아 실제 날씨를 조회하는 Streamlit 앱
+# 테니스 코트 위치·요일·시간대를 입력받아 기상청 실제 날씨를 조회하는 Streamlit 앱
+import math
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
@@ -28,9 +29,10 @@ st.markdown("""
 # =========================================================
 # 상수
 # =========================================================
-DAY_MAP = {"월요일": 0, "화요일": 1, "수요일": 2, "목요일": 3, "금요일": 4, "토요일": 5, "일요일": 6}
+KMA_SERVICE_KEY = "Hn3PmYG7QWq9z5mBu7FqIg"
+KMA_URL = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
 
-# rep: 점수 계산 기준 시간, start/end: 표시 범위 (앞뒤 1시간 포함)
+DAY_MAP = {"월요일": 0, "화요일": 1, "수요일": 2, "목요일": 3, "금요일": 4, "토요일": 5, "일요일": 6}
 TIME_SLOT_MAP = {
     "새벽 (06:00~09:00)": {"rep": 7,  "start": 5,  "end": 10},
     "낮 (12:00~15:00)":   {"rep": 13, "start": 11, "end": 16},
@@ -46,14 +48,13 @@ with st.sidebar:
     day = st.selectbox("📅 운동 요일", list(DAY_MAP.keys()), index=1)
     time_slot = st.selectbox("⏰ 시간대", list(TIME_SLOT_MAP.keys()), index=2)
     st.markdown("---")
-    st.caption("(v)버전 0.4.0 — Open-Meteo 실시간 연동")
+    st.caption("(v)버전 0.5.0 — 기상청 단기예보 연동")
 
 # =========================================================
-# 날씨 API (Open-Meteo, 무료·키 불필요)
+# 위치 → 위경도 → 기상청 격자 변환
 # =========================================================
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=86400)
 def geocode(location: str):
-    """위치명 → (위도, 경도, 확인된 지명). Nominatim으로 한국 주소 정확도 확보."""
     url = "https://nominatim.openstreetmap.org/search"
     headers = {"User-Agent": "TennisTimeWeatherApp/1.0"}
     parts = location.split()
@@ -62,12 +63,8 @@ def geocode(location: str):
         if not query.strip():
             continue
         try:
-            resp = requests.get(
-                url,
-                params={"q": query, "format": "json", "limit": 1, "countrycodes": "kr"},
-                headers=headers,
-                timeout=10,
-            )
+            resp = requests.get(url, params={"q": query, "format": "json", "limit": 1, "countrycodes": "kr"},
+                                headers=headers, timeout=10)
             results = resp.json()
             if results:
                 r = results[0]
@@ -78,40 +75,104 @@ def geocode(location: str):
     return None, None, None
 
 
+def latlon_to_grid(lat: float, lon: float) -> tuple[int, int]:
+    """위경도 → 기상청 Lambert 격자(nx, ny) 변환"""
+    RE, GRID = 6371.00877, 5.0
+    SLAT1, SLAT2, OLON, OLAT = 30.0, 60.0, 126.0, 38.0
+    XO, YO = 43, 136
+    D = math.pi / 180.0
+
+    re = RE / GRID
+    sn = math.log(math.cos(SLAT1 * D) / math.cos(SLAT2 * D)) / \
+         math.log(math.tan(math.pi * 0.25 + SLAT2 * D * 0.5) / math.tan(math.pi * 0.25 + SLAT1 * D * 0.5))
+    sf = (math.tan(math.pi * 0.25 + SLAT1 * D * 0.5) ** sn) * math.cos(SLAT1 * D) / sn
+    ro = re * sf / (math.tan(math.pi * 0.25 + OLAT * D * 0.5) ** sn)
+
+    ra = re * sf / (math.tan(math.pi * 0.25 + lat * D * 0.5) ** sn)
+    theta = (lon - OLON) * D * sn
+    if theta > math.pi:  theta -= 2 * math.pi
+    if theta < -math.pi: theta += 2 * math.pi
+
+    return int(ra * math.sin(theta) + XO + 1.5), int(ro - ra * math.cos(theta) + YO + 1.5)
+
+
+def get_base_datetime() -> tuple[str, str]:
+    """현재 시각 기준 가장 최근 기상청 발표 시각 반환 (발표 후 10분 여유)"""
+    now = datetime.now() - timedelta(minutes=10)
+    base_hours = [2, 5, 8, 11, 14, 17, 20, 23]
+    valid = [h for h in base_hours if h <= now.hour]
+    if valid:
+        return now.strftime("%Y%m%d"), f"{max(valid):02d}00"
+    else:
+        return (now - timedelta(days=1)).strftime("%Y%m%d"), "2300"
+
+
+# =========================================================
+# 기상청 단기예보 API
+# =========================================================
 @st.cache_data(ttl=1800)
-def fetch_hourly_data(lat: float, lon: float, target_date: str) -> dict | None:
-    """Open-Meteo에서 해당 날짜의 시간별 전체 데이터 반환"""
+def fetch_kma_forecast(nx: int, ny: int, base_date: str, base_time: str) -> dict | None:
+    """기상청 단기예보 조회 → {(fcstDate, fcstTime): {category: value}}"""
     try:
-        url = "https://api.open-meteo.com/v1/forecast"
         params = {
-            "latitude": lat,
-            "longitude": lon,
-            "hourly": "temperature_2m,apparent_temperature,relativehumidity_2m,precipitation_probability,precipitation,windspeed_10m,uv_index",
-            "timezone": "Asia/Seoul",
-            "forecast_days": 8,
+            "serviceKey": KMA_SERVICE_KEY,
+            "pageNo": 1,
+            "numOfRows": 1000,
+            "dataType": "JSON",
+            "base_date": base_date,
+            "base_time": base_time,
+            "nx": nx,
+            "ny": ny,
         }
-        resp = requests.get(url, params=params, timeout=10)
-        return resp.json()["hourly"]
+        resp = requests.get(KMA_URL, params=params, timeout=15)
+        items = resp.json()["response"]["body"]["items"]["item"]
+        result = {}
+        for item in items:
+            key = (item["fcstDate"], item["fcstTime"])
+            if key not in result:
+                result[key] = {}
+            result[key][item["category"]] = item["fcstValue"]
+        return result
     except Exception:
         return None
 
 
-def extract_hour(hourly: dict, target_date: str, hour: int) -> dict | None:
-    times = hourly["time"]
-    target = f"{target_date}T{hour:02d}:00"
-    if target not in times:
+def extract_kma_hour(forecast: dict, target_date: str, hour: int) -> dict | None:
+    key = (target_date.replace("-", ""), f"{hour:02d}00")
+    data = forecast.get(key)
+    if not data:
         return None
-    idx = times.index(target)
-    return {
-        "hour":       hour,
-        "temp":       round(hourly["temperature_2m"][idx], 1),
-        "feels_like": round(hourly["apparent_temperature"][idx], 1),
-        "humidity":   hourly["relativehumidity_2m"][idx],
-        "rain_prob":  hourly["precipitation_probability"][idx],
-        "precip":     round(hourly["precipitation"][idx], 1),
-        "wind_speed": round(hourly["windspeed_10m"][idx], 1),
-        "uv":         round(hourly["uv_index"][idx], 1),
-    }
+    try:
+        tmp = float(data.get("TMP", 0))
+        wsd = float(data.get("WSD", 0))
+        # 풍냉지수 기반 체감온도
+        if tmp <= 10 and wsd >= 1.3:
+            feels = 13.12 + 0.6215*tmp - 11.37*(wsd**0.16) + 0.3965*tmp*(wsd**0.16)
+        else:
+            feels = tmp
+
+        pcp_raw = data.get("PCP", "강수없음")
+        try:
+            precip = float(pcp_raw.replace("mm", "").replace("미만", "").strip()) if pcp_raw != "강수없음" else 0.0
+        except Exception:
+            precip = 0.1 if pcp_raw != "강수없음" else 0.0
+
+        sky_map = {"1": "☀️ 맑음", "3": "⛅ 구름많음", "4": "☁️ 흐림"}
+        pty_map = {"0": "-", "1": "🌧 비", "2": "🌨 비/눈", "3": "❄️ 눈", "4": "🌦 소나기"}
+
+        return {
+            "hour":       hour,
+            "temp":       round(tmp, 1),
+            "feels_like": round(feels, 1),
+            "humidity":   int(data.get("REH", 0)),
+            "rain_prob":  int(data.get("POP", 0)),
+            "precip":     precip,
+            "wind_speed": round(wsd, 1),
+            "sky":        sky_map.get(data.get("SKY", "1"), "-"),
+            "pty":        pty_map.get(data.get("PTY", "0"), "-"),
+        }
+    except Exception:
+        return None
 
 
 def get_target_date(day_name: str) -> str:
@@ -124,27 +185,33 @@ def get_target_date(day_name: str) -> str:
 # 데이터 조회
 # =========================================================
 lat, lon, place_name = geocode(location)
-
 if lat is None:
     st.error(f"'{location}' 위치를 찾을 수 없습니다. 다른 지명으로 입력해 보세요.")
     st.stop()
 
+nx, ny = latlon_to_grid(lat, lon)
 target_date = get_target_date(day)
 slot = TIME_SLOT_MAP[time_slot]
+base_date, base_time = get_base_datetime()
 
-hourly_data = fetch_hourly_data(lat, lon, target_date)
-if hourly_data is None:
-    st.error("날씨 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")
+days_diff = (datetime.strptime(target_date, "%Y-%m-%d") - datetime.now()).days
+if days_diff > 3:
+    st.warning(f"기상청 단기예보는 최대 3일 후까지 제공됩니다. {target_date}({day}) 예보는 아직 없습니다.")
     st.stop()
 
-weather = extract_hour(hourly_data, target_date, slot["rep"])
+forecast = fetch_kma_forecast(nx, ny, base_date, base_time)
+if forecast is None:
+    st.error("기상청 날씨 데이터를 불러오지 못했습니다. API 키를 확인하거나 잠시 후 다시 시도해 주세요.")
+    st.stop()
+
+weather = extract_kma_hour(forecast, target_date, slot["rep"])
 if weather is None:
-    st.error("날씨 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")
+    st.error(f"{target_date} {slot['rep']:02d}:00 예보 데이터가 없습니다.")
     st.stop()
 
 hourly_range = [
     w for h in range(slot["start"], slot["end"] + 1)
-    if (w := extract_hour(hourly_data, target_date, h)) is not None
+    if (w := extract_kma_hour(forecast, target_date, h)) is not None
 ]
 
 # =========================================================
@@ -152,12 +219,13 @@ hourly_range = [
 # =========================================================
 def calculate_play_score(w: dict) -> int:
     score = 100
-    if w["rain_prob"] >= 70:   score -= 60
-    elif w["rain_prob"] >= 40: score -= 35
-    if w["wind_speed"] >= 8:   score -= 30
-    elif w["wind_speed"] >= 5: score -= 15
-    if w["humidity"] >= 85:    score -= 15
-    if w["uv"] >= 8:           score -= 10
+    if w["pty"] != "-":          score -= 60   # 강수 발생
+    elif w["rain_prob"] >= 70:   score -= 40
+    elif w["rain_prob"] >= 40:   score -= 20
+    if w["wind_speed"] >= 8:     score -= 25
+    elif w["wind_speed"] >= 5:   score -= 12
+    if w["humidity"] >= 85:      score -= 10
+    if "흐림" in w["sky"]:        score -= 5
     return max(score, 0)
 
 play_score = calculate_play_score(weather)
@@ -171,8 +239,7 @@ else:                  play_status, status_message = "🌧 비추천", "실내 �
 # 드레스 코드 추천
 # =========================================================
 def get_dress_code(w: dict) -> str:
-    temp = w["feels_like"]
-    wind = w["wind_speed"]
+    temp, wind = w["feels_like"], w["wind_speed"]
     if temp >= 28:
         return "🩳 <b>반바지 + 반팔</b><br>통풍이 잘 되는 쿨링 소재를 적극 추천합니다."
     elif temp >= 22:
@@ -191,19 +258,17 @@ dress_code = get_dress_code(weather)
 # 메인 화면
 # =========================================================
 st.title("🎾 테니스 타임 날씨 알리미")
-st.caption(f"최종 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  데이터: Open-Meteo")
+st.caption(f"최종 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  데이터: 기상청 단기예보  |  발표: {base_date} {base_time}")
 st.markdown("---")
 
 col_main, col_sub = st.columns([2, 1])
-
 with col_main:
     st.subheader(f"📍 {place_name} ({day} {time_slot})")
-    st.caption(f"기준 날짜: {target_date} {slot['rep']:02d}:00  |  좌표: {lat:.4f}, {lon:.4f}")
+    st.caption(f"기준 날짜: {target_date} {slot['rep']:02d}:00  |  격자: nx={nx}, ny={ny}")
     st.markdown(
         f'<div class="score-box"><h1>{play_score}점</h1><h3>{play_status}</h3><p>{status_message}</p></div>',
         unsafe_allow_html=True
     )
-
 with col_sub:
     st.subheader("👕 드레스 코드")
     st.markdown(f'<div class="tip-box">{dress_code}</div>', unsafe_allow_html=True)
@@ -214,32 +279,36 @@ with col_sub:
 st.markdown("---")
 st.subheader(f"🌤 시간별 날씨 지표  ({slot['start']:02d}:00 ~ {slot['end']:02d}:00)")
 
-th_base = "padding:6px 10px; text-align:center; font-size:0.82rem; border-bottom:2px solid #ccc;"
-td_base = "padding:5px 10px; text-align:center; font-size:0.82rem;"
+if not hourly_range:
+    st.warning("해당 시간대 예보 데이터가 없습니다.")
+else:
+    th = "padding:6px 10px; text-align:center; font-size:0.82rem; border-bottom:2px solid #ccc;"
+    td = "padding:5px 10px; text-align:center; font-size:0.82rem;"
 
-header_cells = ""
-for w in hourly_range:
-    is_core = slot["start"] + 1 <= w["hour"] <= slot["end"] - 1
-    bg = "background:#e8f5e9;" if is_core else ""
-    header_cells += f'<th style="{th_base}{bg}">{"🟢 " if is_core else ""}{w["hour"]:02d}:00</th>'
+    header_cells = ""
+    for w in hourly_range:
+        is_core = slot["start"] + 1 <= w["hour"] <= slot["end"] - 1
+        bg = "background:#e8f5e9;" if is_core else ""
+        header_cells += f'<th style="{th}{bg}">{"🟢 " if is_core else ""}{w["hour"]:02d}:00</th>'
 
-def tr(label, values, unit=""):
-    cells = "".join(f'<td style="{td_base}">{v}{unit}</td>' for v in values)
-    return f'<tr><td style="{td_base} font-weight:600; text-align:left;">{label}</td>{cells}</tr>'
+    def tr(label, values):
+        cells = "".join(f'<td style="{td}">{v}</td>' for v in values)
+        return f'<tr><td style="{td} font-weight:600; text-align:left;">{label}</td>{cells}</tr>'
 
-table_html = f"""
-<table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
-  <thead><tr><th style="{th_base} text-align:left;">항목</th>{header_cells}</tr></thead>
-  <tbody>
-    {tr("강수확률 / 강수량", [f'{w["rain_prob"]}% / {w["precip"]}mm' for w in hourly_range])}
-    {tr("체감온도", [w["feels_like"] for w in hourly_range], "°C")}
-    {tr("풍속",    [w["wind_speed"] for w in hourly_range], "m/s")}
-    {tr("자외선",  [w["uv"] for w in hourly_range])}
-    {tr("습도",    [w["humidity"] for w in hourly_range], "%")}
-  </tbody>
-</table>
-"""
-st.markdown(table_html, unsafe_allow_html=True)
+    table_html = f"""
+    <table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
+      <thead><tr><th style="{th} text-align:left;">항목</th>{header_cells}</tr></thead>
+      <tbody>
+        {tr("하늘상태",      [w["sky"] for w in hourly_range])}
+        {tr("강수형태",      [w["pty"] for w in hourly_range])}
+        {tr("강수확률/강수량", [f'{w["rain_prob"]}% / {w["precip"]}mm' for w in hourly_range])}
+        {tr("기온 / 체감",   [f'{w["temp"]}°C / {w["feels_like"]}°C' for w in hourly_range])}
+        {tr("풍속",         [f'{w["wind_speed"]}m/s' for w in hourly_range])}
+        {tr("습도",         [f'{w["humidity"]}%' for w in hourly_range])}
+      </tbody>
+    </table>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Tennis Time Weather v0.4.0 — Open-Meteo 실시간 연동")
+st.caption("Tennis Time Weather v0.5.0 — 기상청 단기예보 연동")
