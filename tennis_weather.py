@@ -123,12 +123,12 @@ def get_ultra_base_datetime() -> tuple[str, str]:
 
 def get_ncst_base_datetime() -> tuple[str, str]:
     """초단기실황: 매시 정각 발표, 10분 여유, KST 기준"""
-    t = now_kst() - timedelta(minutes=10)
+    t = now_kst() - timedelta(minutes=5)
     return t.strftime("%Y%m%d"), f"{t.hour:02d}00"
 
 def get_prev_ncst_base_datetime() -> tuple[str, str]:
     """초단기실황 실패 시 한 시간 전 시각으로 재시도"""
-    t = now_kst() - timedelta(minutes=10) - timedelta(hours=1)
+    t = now_kst() - timedelta(minutes=5) - timedelta(hours=1)
     return t.strftime("%Y%m%d"), f"{t.hour:02d}00"
 
 # =========================================================
