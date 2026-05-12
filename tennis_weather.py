@@ -56,7 +56,7 @@ TIME_SLOT_MAP = {
 # =========================================================
 with st.sidebar:
     st.title("🎾 Tennis Time")
-    location  = st.text_input("📍 테니스장 위치", value="대구 북구 칠성동")
+    location  = st.text_input("📍 테니스장 위치", value="대구 북구 산격동")
     day       = st.selectbox("📅 운동 요일", list(DAY_MAP.keys()), index=1)
     time_slot = st.selectbox("⏰ 시간대", list(TIME_SLOT_MAP.keys()), index=2)
     st.markdown("---")
