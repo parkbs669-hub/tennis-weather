@@ -30,7 +30,7 @@ st.markdown("""
 # 상수
 # =========================================================
 KMA_SERVICE_KEY = "Hn3PmYG7QWq9z5mBu7FqIg"
-KMA_URL = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+KMA_URL = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getVilageFcst"
 
 DAY_MAP = {"월요일": 0, "화요일": 1, "수요일": 2, "목요일": 3, "금요일": 4, "토요일": 5, "일요일": 6}
 TIME_SLOT_MAP = {
@@ -115,7 +115,7 @@ def fetch_kma_forecast(nx: int, ny: int, base_date: str, base_time: str) -> dict
     """기상청 단기예보 조회 → {(fcstDate, fcstTime): {category: value}}"""
     try:
         params = {
-            "serviceKey": KMA_SERVICE_KEY,
+            "authKey": KMA_SERVICE_KEY,
             "pageNo": 1,
             "numOfRows": 1000,
             "dataType": "JSON",
