@@ -25,12 +25,20 @@ st.markdown('''
     margin-bottom: 1.2rem; border-left: 5px solid #2196F3;
     font-size: 1rem; color: #1a1a1a;
 }
+/* 모바일 사이드바 열기 버튼 옆에 직관적인 안내 문구 추가 */
+[data-testid="collapsedControl"] {
+    width: auto !important;
+    padding-right: 15px !important;
+    background-color: transparent !important;
+}
 [data-testid="collapsedControl"]::after {
-    content: "  ← 위치·날짜·시간대 변경";
-    font-size: 0.85rem;
-    color: #1976D2;
-    font-weight: 600;
+    content: "위치, 날짜, 시간대변경";
+    font-size: 1rem;
+    color: #FF4B4B; /* 직관적인 빨간색 */
+    font-weight: bold;
+    margin-left: 5px;
     white-space: nowrap;
+}
 }
 </style>
 ''', unsafe_allow_html=True)
