@@ -43,7 +43,12 @@ KMA_SERVICE_KEY = "Hn3PmYG7QWq9z5mBu7FqIg"
 KMA_FCST_URL  = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getVilageFcst"
 KMA_ULTRA_URL = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst"
 KMA_NCST_URL  = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtNcst"
-
+ddef get_today_index() -> int:
+    """오늘 요일의 인덱스 자동 반환"""
+    from datetime import timezone, timedelta
+    KST = timezone(timedelta(hours=9))
+    today = datetime.now(KST).replace(tzinfo=None)
+    return today.weekday()
 DAY_MAP = {"월요일":0,"화요일":1,"수요일":2,"목요일":3,"금요일":4,"토요일":5,"일요일":6}
 TIME_SLOT_MAP = {
     "새벽 (06:00~09:00)": {"rep": 7,  "start": 5,  "end": 10},
@@ -55,12 +60,16 @@ TIME_SLOT_MAP = {
 # 사이드바
 # =========================================================
 with st.sidebar:
-    st.title("🎾 Tennis Time")
+    st.title("🎾 Tennis Time Weather")
+    st.markdown("### ⚙️ 위치 · 날짜 · 시간대 변경")
+    st.divider()
+    
     location  = st.text_input("📍 테니스장 위치", value="대구 북구 산격동")
-    day       = st.selectbox("📅 운동 요일", list(DAY_MAP.keys()), index=1)
-    time_slot = st.selectbox("⏰ 시간대", list(TIME_SLOT_MAP.keys()), index=2)
-    st.markdown("---")
-    st.caption("v0.8.0 — KST 시간 보정 + 초단기실황 안정화")
+    day       = st.selectbox("📅 운동 요일", list(DAY_MAP.keys()), index=datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None).weekday())
+    time_slot = st.selectbox("⏰ 시간대", list(TIME_SLOT_MAP.keys()), index=1)
+    
+    st.divider()
+    st.caption("v0.8.1 — 당일 날짜 자동 설정, 위치 기본값 산격동")
 
 # =========================================================
 # 위치 변환
