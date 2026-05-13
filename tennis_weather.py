@@ -4,7 +4,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Tennis Time Weather", page_icon="🎾", layout="wide")
+st.set_page_config(page_title="Tennis Time Weather", page_icon="🎾", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
@@ -60,6 +60,7 @@ TIME_SLOT_MAP = {
 # 사이드바
 # =========================================================
 with st.sidebar:
+    st.info("👈 좌측에서 위치·날짜·시간대를 변경하세요")
     st.title("🎾 Tennis Time Weather")
     st.markdown("### ⚙️ 위치 · 날짜 · 시간대 변경")
     st.divider()
