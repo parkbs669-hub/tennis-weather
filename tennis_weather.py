@@ -43,7 +43,7 @@ KMA_SERVICE_KEY = "Hn3PmYG7QWq9z5mBu7FqIg"
 KMA_FCST_URL  = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getVilageFcst"
 KMA_ULTRA_URL = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst"
 KMA_NCST_URL  = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtNcst"
-ddef get_today_index() -> int:
+def get_today_index() -> int:
     """오늘 요일의 인덱스 자동 반환"""
     from datetime import timezone, timedelta
     KST = timezone(timedelta(hours=9))
