@@ -313,8 +313,7 @@ weather = extract_fn(forecast, target_date, slot["rep"])
 # [수정 반영] 시간대 예외 처리 적용
 if weather is None:
     if target_date == now.strftime("%Y-%m-%d") and hours_diff < 0:
-        st.warning("⏰ 운동 시간과 장소를 설정하세요.
-        위 상단 >> 를 클릭 하세요.")
+        st.warning("⏰ 운동 시간과 장소를 설정하세요. 위 상단  >> 를 클릭 하세요.")
     else:
         st.error(f"{target_date} {slot['rep']:02d}:00 예보 데이터가 없습니다.")
     st.stop()
