@@ -73,7 +73,7 @@ with st.sidebar:
     st.divider()
     
     location  = st.text_input("📍 테니스장 위치", value="대구 북구 산격동")
-    day       = st.selectbox("📅 운동 요일", list(DAY_MAP.keys()), index=datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None).weekday())
+    day       = st.selectbox("📅 운동 요일", list(DAY_MAP.keys()), index=get_today_index(timezone(timedelta(hours=9))).replace(tzinfo=None).weekday())
     time_slot = st.selectbox("⏰ 시간대", list(TIME_SLOT_MAP.keys()), index=1)
     
     st.divider()
