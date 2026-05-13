@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 st.set_page_config(page_title="Tennis Time Weather", page_icon="🎾", layout="wide", initial_sidebar_state="expanded")
 
-st.markdown("""
+st.markdown('''
 <style>
 .main { padding-top: 1rem; }
 .score-box {
@@ -33,7 +33,7 @@ st.markdown("""
     white-space: nowrap;
 }
 </style>
-""", unsafe_allow_html=True)
+''', unsafe_allow_html=True)
 
 # =========================================================
 # KST 시간 (Streamlit Cloud는 UTC → +9시간 보정 필수)
@@ -58,6 +58,16 @@ def get_today_index() -> int:
     today = datetime.now(KST).replace(tzinfo=None)
     return today.weekday()
 
+def get_today_time_slot_index() -> int:
+    """현재 시간에 맞는 시간대 자동 선택"""
+    hour = now_kst().hour
+    if hour < 12:
+        return 0  # 새벽
+    elif hour < 19:
+        return 1  # 낮
+    else:
+        return 2  # 저녁
+
 DAY_MAP = {"월요일":0,"화요일":1,"수요일":2,"목요일":3,"금요일":4,"토요일":5,"일요일":6}
 TIME_SLOT_MAP = {
     "새벽 (06:00~09:00)": {"rep": 7,  "start": 5,  "end": 10},
@@ -75,10 +85,10 @@ with st.sidebar:
     
     location  = st.text_input("📍 테니스장 위치", value="대구 북구 산격동")
     day       = st.selectbox("📅 운동 요일", list(DAY_MAP.keys()), index=datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None).weekday())
-    time_slot = st.selectbox("⏰ 시간대", list(TIME_SLOT_MAP.keys()), index=1)
+    time_slot = st.selectbox("⏰ 시간대", list(TIME_SLOT_MAP.keys()), index=get_today_time_slot_index())
     
     st.divider()
-    st.caption("v0.8.1 — 당일 날짜 자동 설정, 위치 기본값 산격동")
+    st.caption("v0.8.2 — 당일 날짜 및 시간대 자동 설정, 예외처리 개선")
 
 # =========================================================
 # 위치 변환
@@ -109,8 +119,7 @@ def latlon_to_grid(lat: float, lon: float) -> tuple[int, int]:
     XO, YO = 43, 136
     D = math.pi / 180.0
     re = RE / GRID
-    sn = math.log(math.cos(SLAT1*D) / math.cos(SLAT2*D)) / \
-         math.log(math.tan(math.pi*0.25 + SLAT2*D*0.5) / math.tan(math.pi*0.25 + SLAT1*D*0.5))
+    sn = math.log(math.cos(SLAT1*D) / math.cos(SLAT2*D)) /          math.log(math.tan(math.pi*0.25 + SLAT2*D*0.5) / math.tan(math.pi*0.25 + SLAT1*D*0.5))
     sf = (math.tan(math.pi*0.25 + SLAT1*D*0.5) ** sn) * math.cos(SLAT1*D) / sn
     ro = re * sf / (math.tan(math.pi*0.25 + OLAT*D*0.5) ** sn)
     ra = re * sf / (math.tan(math.pi*0.25 + lat*D*0.5) ** sn)
@@ -257,7 +266,7 @@ if lat is None:
 nx, ny      = latlon_to_grid(lat, lon)
 target_date = get_target_date(day)
 slot        = TIME_SLOT_MAP[time_slot]
-now         = now_kst()
+now          = now_kst()
 
 # =========================================================
 # 예보 종류 자동 선택
@@ -285,8 +294,13 @@ if forecast is None:
     st.stop()
 
 weather = extract_fn(forecast, target_date, slot["rep"])
+
+# [수정 반영] 시간대 예외 처리 적용
 if weather is None:
-    st.error(f"{target_date} {slot['rep']:02d}:00 예보 데이터가 없습니다.")
+    if target_date == now.strftime("%Y-%m-%d") and hours_diff < 0:
+        st.warning("⏰ 이미 지난 시간대입니다. 다른 시간대나 날짜를 선택해 주세요.")
+    else:
+        st.error(f"{target_date} {slot['rep']:02d}:00 예보 데이터가 없습니다.")
     st.stop()
 
 hourly_range = [w for h in range(slot["start"], slot["end"]+1)
@@ -301,7 +315,7 @@ LIGHT_PTY  = {"🌧 빗방울", "🌨 빗방울/눈날림", "❄️ 눈날림"}
 def calculate_play_score(w: dict) -> int:
     score = 100
     if w["pty"] in HEAVY_PTY:       score -= 60
-    elif w["pty"] in LIGHT_PTY:     score -= 20
+    elif w["pty"] in LIGHT_PTY:      score -= 20
     elif w["rain_prob"] is not None:
         if w["rain_prob"] >= 70:    score -= 40
         elif w["rain_prob"] >= 40:  score -= 20
@@ -418,7 +432,7 @@ else:
     precip_row = (tr("강수량", [f'{w["precip"]}mm' for w in hourly_range]) if use_ultra
                   else tr("강수확률/강수량", [f'{w["rain_prob"]}% / {w["precip"]}mm' for w in hourly_range]))
 
-    st.markdown(f"""
+    st.markdown(f'''
     <table style="width:100%; border-collapse:collapse; font-family:sans-serif;">
       <thead><tr><th style="{th} text-align:left;">항목</th>{header_cells}</tr></thead>
       <tbody>
@@ -426,11 +440,11 @@ else:
         {tr("강수형태",    [w["pty"] for w in hourly_range])}
         {precip_row}
         {tr("기온 / 체감", [f'{w["temp"]}°C / {w["feels_like"]}°C' for w in hourly_range])}
-        {tr("풍속",       [f'{w["wind_speed"]}m/s' for w in hourly_range])}
-        {tr("습도",       [f'{w["humidity"]}%' for w in hourly_range])}
+        {tr("풍속",        [f'{w["wind_speed"]}m/s' for w in hourly_range])}
+        {tr("습도",        [f'{w["humidity"]}%' for w in hourly_range])}
       </tbody>
     </table>
-    """, unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Tennis Time Weather v0.8.0 — KST 시간 보정 + 초단기실황 안정화")
+st.caption("Tennis Time Weather v0.8.2 — KST 시간 보정 + 초단기실황 안정화")
