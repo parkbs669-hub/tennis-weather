@@ -25,6 +25,12 @@ st.markdown("""
     margin-bottom: 1.2rem; border-left: 5px solid #2196F3;
     font-size: 1rem; color: #1a1a1a;
 }
+[data-testid="collapsedControl"]::after {
+    content: "  ← 위치·날짜·시간대 변경";
+    font-size: 0.85rem;
+    color: #1976D2;
+    font-weight: 600;
+    white-space: nowrap;
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,8 +66,6 @@ TIME_SLOT_MAP = {
 # 사이드바
 # =========================================================
 with st.sidebar:
-    st.info("💡 좌측 메뉴(≫)에서 위치·날짜·시간대를 변경하세요")
-    st.info("👈 좌측에서 위치·날짜·시간대를 변경하세요")
     st.title("🎾 Tennis Time Weather")
     st.markdown("### ⚙️ 위치 · 날짜 · 시간대 변경")
     st.divider()
