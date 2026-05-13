@@ -39,7 +39,7 @@ st.markdown('''
     margin-left: 5px;
     white-space: nowrap;
 }
-}
+
 </style>
 ''', unsafe_allow_html=True)
 
