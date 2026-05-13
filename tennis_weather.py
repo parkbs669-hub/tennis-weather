@@ -27,24 +27,24 @@ st.markdown('''
 }
 /* 기존 .ncst-box 등은 그대로 둡니다 */
 
-/* 모바일 사이드바 강제 노출 CSS (어떤 환경이든 무조건 보이게 설정) */
-[data-testid="collapsedControl"] {
-    overflow: visible !important;
-    position: relative !important;
-}
-
-[data-testid="collapsedControl"]::after {
-    content: "위치, 날짜, 시간대변경";
-    position: absolute;
-    left: 45px; /* 화살표 아이콘 우측으로 밀어내기 */
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 1.1rem !important; /* 크기 약간 더 키움 */
-    color: #FF4B4B !important;
-    font-weight: 900 !important; /* 아주 굵게 */
-    white-space: nowrap;
-    z-index: 999999 !important; /* 무조건 맨 위에 오도록 설정 */
-    pointer-events: none; /* 글자를 눌러도 버튼이 클릭되도록 함 */
+/* 모바일 화면에서 상단 헤더에 강제로 안내 문구 띄우기 (버튼 오류 완벽 우회) */
+@media screen and (max-width: 768px) {
+    header[data-testid="stHeader"]::after,
+    .stApp > header::after {
+        content: "위치, 날짜, 시간대변경";
+        position: fixed !important;
+        top: 18px !important;
+        left: 55px !important;
+        color: #FF4B4B !important;
+        font-size: 1.05rem !important;
+        font-weight: 900 !important;
+        z-index: 999999 !important;
+        pointer-events: none !important;
+        white-space: nowrap !important;
+        background: rgba(255, 255, 255, 0.7);
+        padding: 0px 5px;
+        border-radius: 5px;
+    }
 }
 
 </style>
