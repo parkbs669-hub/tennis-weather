@@ -25,19 +25,26 @@ st.markdown('''
     margin-bottom: 1.2rem; border-left: 5px solid #2196F3;
     font-size: 1rem; color: #1a1a1a;
 }
-/* 모바일 사이드바 열기 버튼 옆에 직관적인 안내 문구 추가 */
+/* 기존 .ncst-box 등은 그대로 둡니다 */
+
+/* 모바일 사이드바 강제 노출 CSS (어떤 환경이든 무조건 보이게 설정) */
 [data-testid="collapsedControl"] {
-    width: auto !important;
-    padding-right: 15px !important;
-    background-color: transparent !important;
+    overflow: visible !important;
+    position: relative !important;
 }
+
 [data-testid="collapsedControl"]::after {
     content: "위치, 날짜, 시간대변경";
-    font-size: 1rem;
-    color: #FF4B4B; /* 직관적인 빨간색 */
-    font-weight: bold;
-    margin-left: 5px;
+    position: absolute;
+    left: 45px; /* 화살표 아이콘 우측으로 밀어내기 */
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.1rem !important; /* 크기 약간 더 키움 */
+    color: #FF4B4B !important;
+    font-weight: 900 !important; /* 아주 굵게 */
     white-space: nowrap;
+    z-index: 999999 !important; /* 무조건 맨 위에 오도록 설정 */
+    pointer-events: none; /* 글자를 눌러도 버튼이 클릭되도록 함 */
 }
 
 </style>
