@@ -189,12 +189,20 @@ def fetch_kma_forecast(nx, ny, base_date, base_time) -> dict | None:
             "authKey": KMA_SERVICE_KEY, "pageNo": 1, "numOfRows": 1000,
             "dataType": "JSON", "base_date": base_date, "base_time": base_time,
             "nx": nx, "ny": ny}, timeout=15)
+        data = r.json()
+        header = data.get("response", {}).get("header", {})
+        code   = header.get("resultCode", "")
+        msg    = header.get("resultMsg", "")
+        if code != "00":
+            st.warning(f"⚠️ 단기예보 API 오류: [{code}] {msg}")
+            return None
         out = {}
-        for item in r.json()["response"]["body"]["items"]["item"]:
+        for item in data["response"]["body"]["items"]["item"]:
             k = (item["fcstDate"], item["fcstTime"])
             out.setdefault(k, {})[item["category"]] = item["fcstValue"]
         return out
-    except Exception:
+    except Exception as e:
+        st.warning(f"⚠️ 단기예보 요청 실패: {e}")
         return None
 
 @st.cache_data(ttl=1800)
