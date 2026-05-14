@@ -46,7 +46,13 @@ st.markdown('''
         border-radius: 5px;
     }
 }
-
+[data-testid="collapsedControl"]::after {
+    content: "  ← 위치·날짜·시간대 변경";
+    font-size: 0.85rem;
+    color: #1976D2 !important;
+    font-weight: 600;
+    white-space: nowrap;
+}
 </style>
 ''', unsafe_allow_html=True)
 
@@ -292,9 +298,15 @@ use_ultra  = (target_date == now.strftime("%Y-%m-%d")) and (0 <= hours_diff <= 6
 
 if use_ultra:
     base_date, base_time = get_ultra_base_datetime()
-    forecast       = fetch_kma_ultra_forecast(nx, ny, base_date, base_time)
-    extract_fn     = extract_ultra_hour
-    forecast_label = "초단기예보"
+    forecast = fetch_kma_ultra_forecast(nx, ny, base_date, base_time)
+    if forecast is not None:
+        extract_fn     = extract_ultra_hour
+        forecast_label = "초단기예보"
+    else:
+        base_date, base_time = get_base_datetime()
+        forecast       = fetch_kma_forecast(nx, ny, base_date, base_time)
+        extract_fn     = extract_kma_hour
+        forecast_label = "단기예보"
 else:
     base_date, base_time = get_base_datetime()
     if (datetime.strptime(target_date, "%Y-%m-%d") - now).days > 3:
