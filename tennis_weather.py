@@ -67,10 +67,10 @@ def now_kst() -> datetime:
 # =========================================================
 # 상수
 # =========================================================
-KMA_SERVICE_KEY = "a968b1d9e038ede7b408f4ad5882d14496218a7204dc21a4e7fd12bcf2b1eef3"
-KMA_FCST_URL  = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
-KMA_ULTRA_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst"
-KMA_NCST_URL  = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+KMA_SERVICE_KEY = "Hn3PmYG7QWq9z5mBu7FqIg"
+KMA_FCST_URL  = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getVilageFcst"
+KMA_ULTRA_URL = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst"
+KMA_NCST_URL  = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtNcst"
 
 def get_today_index() -> int:
     """오늘 요일의 인덱스 자동 반환"""
