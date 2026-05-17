@@ -24,6 +24,11 @@ st.markdown('''
     margin-bottom: 1.2rem; border-left: 5px solid #2196F3;
     font-size: 1rem; color: #1a1a1a;
 }
+.coupang-box {
+    padding: 1rem; border-radius: 10px; background-color: #ffffff;
+    border: 1px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    height: 100%;
+}
 @media screen and (max-width: 768px) {
     header[data-testid="stHeader"]::after,
     .stApp > header::after {
@@ -264,6 +269,34 @@ def get_dress_code(w: dict) -> str:
     return "🥶 <b>긴바지 + 따뜻한 겉옷</b><br>충분히 몸이 풀리기 전까지 겉옷을 벗지 마세요."
 
 # =========================================================
+# 쿠팡 추천 상품 로직
+# =========================================================
+def get_coupang_recommendations(w: dict) -> list:
+    recs = []
+    temp = w["feels_like"]
+    wind = w["wind_speed"]
+    rain_prob = w["rain_prob"]
+
+    # 예시 링크들입니다. 실제 발급받은 쿠팡 파트너스 링크로 교체하여 사용하세요.
+    if rain_prob >= 40:
+        recs.append({"name": "실내 테니스화", "link": "https://link.coupang.com/a/example_indoor_shoes", "desc": "비가 올 확률이 높습니다. 실내 코트를 대비하세요!", "emoji": "👟"})
+        recs.append({"name": "스포츠 타월", "link": "https://link.coupang.com/a/example_towel", "desc": "땀과 비를 닦을 수 있는 스포츠 타월", "emoji": "🧻"})
+    elif temp >= 28:
+        recs.append({"name": "쿨링 넥워머 / 암슬리브", "link": "https://link.coupang.com/a/example_cool", "desc": "더운 날씨에 자외선 차단과 쿨링을 동시에!", "emoji": "🧊"})
+        recs.append({"name": "이온음료 박스", "link": "https://link.coupang.com/a/example_drink", "desc": "땀을 많이 흘리는 날엔 수분 보충이 필수입니다.", "emoji": "🥤"})
+    elif temp <= 10:
+        recs.append({"name": "테니스 방한 장갑", "link": "https://link.coupang.com/a/example_gloves", "desc": "추운 날씨에 손의 감각을 유지하세요.", "emoji": "🧤"})
+        recs.append({"name": "경량 패딩 조끼", "link": "https://link.coupang.com/a/example_vest", "desc": "활동성을 유지하면서 체온을 보호해줍니다.", "emoji": "🦺"})
+    elif wind >= 5:
+        recs.append({"name": "가벼운 바람막이", "link": "https://link.coupang.com/a/example_windbreaker", "desc": "바람이 부는 날씨엔 체온 유지가 중요합니다.", "emoji": "🧥"})
+        recs.append({"name": "테니스 모자", "link": "https://link.coupang.com/a/example_cap", "desc": "바람에 머리카락이 날리지 않게 고정해줍니다.", "emoji": "🧢"})
+    else:
+        recs.append({"name": "테니스 공 (새 캔)", "link": "https://link.coupang.com/a/example_balls", "desc": "운동하기 딱 좋은 날씨! 새 공으로 기분 좋게 플레이하세요.", "emoji": "🎾"})
+        recs.append({"name": "테니스 오버그립", "link": "https://link.coupang.com/a/example_grip", "desc": "쾌적한 플레이를 위한 쫀쫀한 새 그립", "emoji": "🏸"})
+
+    return recs
+
+# =========================================================
 # 화면 출력
 # =========================================================
 st.title("🎾 테니스 타임 날씨 알리미")
@@ -308,6 +341,24 @@ with col_main:
 with col_sub:
     st.subheader("👕 드레스 코드")
     st.markdown(f'<div class="tip-box">{get_dress_code(weather)}</div>', unsafe_allow_html=True)
+
+# ── 쿠팡 상품 추천 ────────────────────────────────────
+st.markdown("---")
+st.subheader("🛒 날씨 맞춤 추천 테니스 용품 (쿠팡 파트너스)")
+
+recs = get_coupang_recommendations(weather)
+cols = st.columns(len(recs))
+for i, rec in enumerate(recs):
+    with cols[i]:
+        st.markdown(f"""
+        <div class="coupang-box">
+            <h4>{rec['emoji']} <a href="{rec['link']}" target="_blank" style="text-decoration:none; color:#1a1a1a;">{rec['name']}</a></h4>
+            <p style="font-size:0.9rem; color:#555;">{rec['desc']}</p>
+            <a href="{rec['link']}" target="_blank" style="display:inline-block; padding:8px 12px; background-color:#118eff; color:white; border-radius:4px; text-decoration:none; font-weight:bold; font-size:0.85rem;">쿠팡에서 보기 👉</a>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.caption("※ 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다. (예시 링크로 동작 중입니다)")
 
 # ── 시간별 예보 테이블 ────────────────────────────────────
 st.markdown("---")
