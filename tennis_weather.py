@@ -257,7 +257,7 @@ elif play_score >= 45: play_status, status_message = "⚠️ 주의", "기상 �
 else:                  play_status, status_message = "🌧 비추천", "실내 코트 예약을 권장합니다."
 
 # =========================================================
-# 드레스 코드 (개선 버전)
+# 드레스 코드 (이모지 강화 버전)
 # =========================================================
 def get_dress_code(w: dict) -> str:
     temp = w["feels_like"]
@@ -269,41 +269,42 @@ def get_dress_code(w: dict) -> str:
 
     # ── 1) 온도 기반 복장 ──
     if temp >= 33:
-        lines.append("🩳 <b>반바지 + 민소매/반팔 (쿨링 소재)</b>")
-        lines.append("폭염 수준입니다. UV 차단 기능 의류, 선크림, 선글라스 필수!")
-        lines.append("얼음 타월·쿨링 스프레이를 준비하고, 체인지오버마다 수분 보충하세요.")
+        lines.append("🩳🔥 <b>반바지 + 민소매/반팔 (쿨링 소재)</b>")
+        lines.append("🥵 폭염 수준! 🧴 선크림 · 🕶️ 선글라스 · 🧢 모자 필수!")
+        lines.append("🧊 얼음 타월 · 💨 쿨링 스프레이 준비, 🚰 체인지오버마다 수분 보충하세요.")
     elif temp >= 28:
-        lines.append("🩳 <b>반바지 + 반팔 (통풍 소재)</b>")
-        lines.append("더운 날씨입니다. 속건성 소재를 추천하며, 선크림을 꼭 바르세요.")
+        lines.append("🩳☀️ <b>반바지 + 반팔 (통풍 소재)</b>")
+        lines.append("🌡️ 더운 날씨! 👕 속건성 소재 추천, 🧴 선크림 꼭 바르세요.")
+        lines.append("🥤 물·이온음료를 넉넉히 챙기세요.")
     elif temp >= 22:
-        lines.append("👕 <b>반바지 + 반팔</b>")
-        lines.append("쾌적한 날씨! 운동 후 땀이 식을 수 있으니 가벼운 겉옷을 챙기세요.")
+        lines.append("👕😎 <b>반바지 + 반팔</b>")
+        lines.append("🌤️ 쾌적한 날씨! 운동 후 땀이 식을 수 있으니 🧥 가벼운 겉옷을 챙기세요.")
     elif temp >= 15:
         if wind >= 4:
-            lines.append("🧥 <b>긴바지(또는 반바지) + 얇은 바람막이 필수</b>")
-            lines.append("바람이 불어 체감 온도가 낮습니다. 웜업 시 겉옷을 입고 시작하세요.")
+            lines.append("🧥💨 <b>긴바지(또는 반바지) + 얇은 바람막이 필수</b>")
+            lines.append("🌬️ 바람이 불어 체감 온도 ⬇️ 낮습니다. 🏃 웜업 시 겉옷 입고 시작하세요.")
         else:
-            lines.append("👖 <b>긴바지 + 긴팔 (또는 반팔 + 웜업 자켓)</b>")
-            lines.append("가벼운 겉옷으로 시작하기 좋은 날씨입니다.")
+            lines.append("👖🍃 <b>긴바지 + 긴팔 (또는 반팔 + 웜업 자켓)</b>")
+            lines.append("🌿 가벼운 겉옷으로 시작하기 좋은 날씨입니다.")
     elif temp >= 10:
-        lines.append("🧤 <b>긴바지 + 긴팔 + 웜업 자켓</b>")
-        lines.append("쌀쌀합니다. 충분한 스트레칭 후 겉옷을 벗으세요.")
+        lines.append("🧤🌡️ <b>긴바지 + 긴팔 + 웜업 자켓</b>")
+        lines.append("🥶 쌀쌀합니다! 🤸 충분한 스트레칭 후 겉옷을 벗으세요.")
         if wind >= 4:
-            lines.append("💨 바람까지 불어 체감 온도가 더 낮으니 방풍 자켓을 추천합니다.")
+            lines.append("💨🧱 바람까지 불어 체감 온도 ⬇️⬇️ 방풍 자켓을 추천합니다.")
     else:
-        lines.append("🥶 <b>긴바지 + 기모/패딩 겉옷 + 장갑</b>")
-        lines.append("매우 춥습니다. 몸이 완전히 풀리기 전까지 겉옷을 벗지 마세요.")
-        lines.append("핫팩, 보온 물병을 챙기면 좋습니다.")
+        lines.append("🥶❄️ <b>긴바지 + 기모/패딩 겉옷 + 장갑</b>")
+        lines.append("⛄ 매우 춥습니다! 🧣 몸이 완전히 풀리기 전까지 겉옷을 벗지 마세요.")
+        lines.append("🔥 핫팩 · ☕ 보온 물병을 챙기면 좋습니다.")
 
     # ── 2) 비 대비 ──
     if rain_prob >= 70:
-        lines.append("<br>🌧️ <b>비 올 확률이 높습니다!</b> 방수 자켓·여벌 옷·타월을 꼭 챙기세요.")
+        lines.append("<br>🌧️⚠️ <b>비 올 확률이 높습니다!</b> 🧥 방수 자켓 · 👕 여벌 옷 · 🧻 타월을 꼭 챙기세요.")
     elif rain_prob >= 40:
-        lines.append("<br>🌂 비 가능성이 있습니다. 가벼운 우비나 방수 바람막이를 준비하세요.")
+        lines.append("<br>🌂☁️ 비 가능성이 있습니다. 🧥 가벼운 우비나 방수 바람막이를 준비하세요.")
 
     # ── 3) 고습도 ──
     if humidity >= 80 and temp >= 22:
-        lines.append("💦 습도가 높아 땀이 잘 마르지 않습니다. 속건·흡습 소재 필수, 여벌 상의를 추천합니다.")
+        lines.append("💦😓 습도가 높아 땀이 잘 안 마릅니다. 👕 속건·흡습 소재 필수, 🎒 여벌 상의를 추천합니다.")
 
     return '<div class="tip-box">' + "<br>".join(lines) + '</div>'
 
