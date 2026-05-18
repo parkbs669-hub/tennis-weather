@@ -257,7 +257,56 @@ elif play_score >= 45: play_status, status_message = "⚠️ 주의", "기상 �
 else:                  play_status, status_message = "🌧 비추천", "실내 코트 예약을 권장합니다."
 
 # =========================================================
-# 드레스 코드 (이모지 강화 버전)
+# 의류·아이템 키워드 → 이모지 자동 매핑
+# =========================================================
+EMOJI_MAP = {
+    # 하의
+    "반바지":     "🩳",
+    "긴바지":     "👖",
+    # 상의
+    "반팔":       "👕",
+    "긴팔":       "🧥",
+    "민소매":     "🎽",
+    # 겉옷·아우터
+    "바람막이":   "🧥",
+    "웜업 자켓":  "🧥",
+    "방풍 자켓":  "🧥",
+    "방수 자켓":  "🧥",
+    "겉옷":       "🧥",
+    "패딩":       "🧥",
+    "기모":       "🧶",
+    "우비":       "🌂",
+    # 소품·액세서리
+    "장갑":       "🧤",
+    "모자":       "🧢",
+    "선글라스":   "🕶️",
+    "선크림":     "🧴",
+    "타월":       "🧻",
+    "핫팩":       "🔥",
+    # 음료·기타
+    "이온음료":   "🥤",
+    "물병":       "☕",
+    "보온 물병":  "☕",
+    "쿨링 스프레이": "💨",
+    "얼음 타월":  "🧊",
+    "여벌 옷":    "👕",
+    "여벌 상의":  "👕",
+}
+
+def auto_emoji(text: str) -> str:
+    """텍스트 내 의류·아이템 키워드를 찾아 앞에 이모지를 자동 삽입"""
+    # 긴 키워드부터 먼저 매칭 (예: "웜업 자켓"이 "자켓"보다 먼저)
+    for keyword in sorted(EMOJI_MAP, key=len, reverse=True):
+        emoji = EMOJI_MAP[keyword]
+        # 이미 이모지가 붙어 있으면 스킵
+        if f"{emoji} {keyword}" in text or f"{emoji}{keyword}" in text:
+            continue
+        text = text.replace(keyword, f"{emoji} {keyword}")
+    return text
+
+
+# =========================================================
+# 드레스 코드 (자동 이모지 매핑 버전)
 # =========================================================
 def get_dress_code(w: dict) -> str:
     temp = w["feels_like"]
@@ -269,44 +318,48 @@ def get_dress_code(w: dict) -> str:
 
     # ── 1) 온도 기반 복장 ──
     if temp >= 33:
-        lines.append("🩳🔥 <b>반바지 + 민소매/반팔 (쿨링 소재)</b>")
-        lines.append("🥵 폭염 수준! 🧴 선크림 · 🕶️ 선글라스 · 🧢 모자 필수!")
-        lines.append("🧊 얼음 타월 · 💨 쿨링 스프레이 준비, 🚰 체인지오버마다 수분 보충하세요.")
+        lines.append("<b>반바지 + 민소매/반팔 (쿨링 소재)</b>")
+        lines.append("🥵 폭염 수준! 선크림 · 선글라스 · 모자 필수!")
+        lines.append("얼음 타월 · 쿨링 스프레이 준비, 🚰 체인지오버마다 수분 보충하세요.")
     elif temp >= 28:
-        lines.append("🩳☀️ <b>반바지 + 반팔 (통풍 소재)</b>")
-        lines.append("🌡️ 더운 날씨! 👕 속건성 소재 추천, 🧴 선크림 꼭 바르세요.")
-        lines.append("🥤 물·이온음료를 넉넉히 챙기세요.")
+        lines.append("<b>반바지 + 반팔 (통풍 소재)</b>")
+        lines.append("🌡️ 더운 날씨! 속건성 소재 추천, 선크림 꼭 바르세요.")
+        lines.append("이온음료를 넉넉히 챙기세요.")
     elif temp >= 22:
-        lines.append("👕😎 <b>반바지 + 반팔</b>")
-        lines.append("🌤️ 쾌적한 날씨! 운동 후 땀이 식을 수 있으니 🧥 가벼운 겉옷을 챙기세요.")
+        lines.append("<b>반바지 + 반팔</b>")
+        lines.append("🌤️ 쾌적한 날씨! 운동 후 땀이 식을 수 있으니 가벼운 겉옷을 챙기세요.")
     elif temp >= 15:
         if wind >= 4:
-            lines.append("🧥💨 <b>긴바지(또는 반바지) + 얇은 바람막이 필수</b>")
-            lines.append("🌬️ 바람이 불어 체감 온도 ⬇️ 낮습니다. 🏃 웜업 시 겉옷 입고 시작하세요.")
+            lines.append("<b>긴바지(또는 반바지) + 얇은 바람막이 필수</b>")
+            lines.append("🌬️ 바람이 불어 체감 온도 ⬇️ 웜업 시 겉옷 입고 시작하세요.")
         else:
-            lines.append("👖🍃 <b>긴바지 + 긴팔 (또는 반팔 + 웜업 자켓)</b>")
+            lines.append("<b>긴바지 + 긴팔 (또는 반팔 + 웜업 자켓)</b>")
             lines.append("🌿 가벼운 겉옷으로 시작하기 좋은 날씨입니다.")
     elif temp >= 10:
-        lines.append("🧤🌡️ <b>긴바지 + 긴팔 + 웜업 자켓</b>")
+        lines.append("<b>긴바지 + 긴팔 + 웜업 자켓</b>")
         lines.append("🥶 쌀쌀합니다! 🤸 충분한 스트레칭 후 겉옷을 벗으세요.")
         if wind >= 4:
-            lines.append("💨🧱 바람까지 불어 체감 온도 ⬇️⬇️ 방풍 자켓을 추천합니다.")
+            lines.append("💨 바람까지 불어 체감 온도 ⬇️⬇️ 방풍 자켓을 추천합니다.")
     else:
-        lines.append("🥶❄️ <b>긴바지 + 기모/패딩 겉옷 + 장갑</b>")
+        lines.append("<b>긴바지 + 기모/패딩 겉옷 + 장갑</b>")
         lines.append("⛄ 매우 춥습니다! 🧣 몸이 완전히 풀리기 전까지 겉옷을 벗지 마세요.")
-        lines.append("🔥 핫팩 · ☕ 보온 물병을 챙기면 좋습니다.")
+        lines.append("핫팩 · 보온 물병을 챙기면 좋습니다.")
 
     # ── 2) 비 대비 ──
     if rain_prob >= 70:
-        lines.append("<br>🌧️⚠️ <b>비 올 확률이 높습니다!</b> 🧥 방수 자켓 · 👕 여벌 옷 · 🧻 타월을 꼭 챙기세요.")
+        lines.append("<br>🌧️⚠️ <b>비 올 확률이 높습니다!</b> 방수 자켓 · 여벌 옷 · 타월을 꼭 챙기세요.")
     elif rain_prob >= 40:
-        lines.append("<br>🌂☁️ 비 가능성이 있습니다. 🧥 가벼운 우비나 방수 바람막이를 준비하세요.")
+        lines.append("<br>🌂☁️ 비 가능성이 있습니다. 가벼운 우비나 바람막이를 준비하세요.")
 
     # ── 3) 고습도 ──
     if humidity >= 80 and temp >= 22:
-        lines.append("💦😓 습도가 높아 땀이 잘 안 마릅니다. 👕 속건·흡습 소재 필수, 🎒 여벌 상의를 추천합니다.")
+        lines.append("💦😓 습도가 높아 땀이 잘 안 마릅니다. 속건·흡습 소재 필수, 여벌 상의를 추천합니다.")
 
-    return '<div class="tip-box">' + "<br>".join(lines) + '</div>'
+    # 전체 텍스트에 자동 이모지 삽입
+    result = "<br>".join(lines)
+    result = auto_emoji(result)
+
+    return '<div class="tip-box">' + result + '</div>'
 
 # =========================================================
 # 쿠팡 추천 상품 로직
