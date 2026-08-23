@@ -140,7 +140,7 @@ with st.sidebar:
     )
 
     st.divider()
-    st.caption("v0.9.3 — Open-Meteo 기반")
+    st.caption("v0.9.4 — Open-Meteo 기반")
 
 
 # =========================================================
@@ -192,20 +192,123 @@ def _result_matches_major_city(result: dict, requested_location: str) -> bool:
     return name in expected
 
 
+PRECISE_LOCATION_OVERRIDES = {
+    "대구광역시 북구 산격동": (35.8998232, 128.6063565, "대구광역시 북구 산격동"),
+    "대구 북구 산격동": (35.8998232, 128.6063565, "대구광역시 북구 산격동"),
+    "북구 산격동": (35.8998232, 128.6063565, "대구광역시 북구 산격동"),
+    "산격동": (35.8998232, 128.6063565, "대구광역시 북구 산격동"),
+    "대구광역시 북구 칠성동": (35.8766763, 128.5963907, "대구광역시 북구 칠성동"),
+    "대구 북구 칠성동": (35.8766763, 128.5963907, "대구광역시 북구 칠성동"),
+    "북구 칠성동": (35.8766763, 128.5963907, "대구광역시 북구 칠성동"),
+    "칠성동": (35.8766763, 128.5963907, "대구광역시 북구 칠성동"),
+}
+
+
+def _is_precise_korean_location(location: str) -> bool:
+    tokens = location.split()
+    return any(
+        token.endswith(("동", "읍", "면", "리", "가"))
+        for token in tokens
+    )
+
+
+def _token_in_display(token: str, display_name: str) -> bool:
+    aliases = {
+        "대구광역시": ("대구광역시", "대구", "daegu"),
+        "대구": ("대구광역시", "대구", "daegu"),
+        "서울특별시": ("서울특별시", "서울", "seoul"),
+        "서울": ("서울특별시", "서울", "seoul"),
+        "부산광역시": ("부산광역시", "부산", "busan"),
+        "부산": ("부산광역시", "부산", "busan"),
+        "인천광역시": ("인천광역시", "인천", "incheon"),
+        "인천": ("인천광역시", "인천", "incheon"),
+        "광주광역시": ("광주광역시", "광주", "gwangju"),
+        "광주": ("광주광역시", "광주", "gwangju"),
+        "대전광역시": ("대전광역시", "대전", "daejeon"),
+        "대전": ("대전광역시", "대전", "daejeon"),
+        "울산광역시": ("울산광역시", "울산", "ulsan"),
+        "울산": ("울산광역시", "울산", "ulsan"),
+        "세종특별자치시": ("세종특별자치시", "세종", "sejong"),
+        "세종": ("세종특별자치시", "세종", "sejong"),
+    }
+    haystack = display_name.lower()
+    return any(value.lower() in haystack for value in aliases.get(token, (token,)))
+
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def geocode(location: str):
     normalized = " ".join(location.strip().split())
 
-    # 산격동은 동명 지역 오선택을 막기 위해 정확한 행정구역으로 고정한다.
-    # 날씨 조회에는 산격동 내부의 대표 좌표를 사용한다.
-    sangyeok_aliases = {
-        "대구광역시 북구 산격동",
-        "대구 북구 산격동",
-        "북구 산격동",
-        "산격동",
-    }
-    if normalized in sangyeok_aliases:
-        return 35.8998232, 128.6063565, "대구광역시 북구 산격동"
+    if normalized in PRECISE_LOCATION_OVERRIDES:
+        return PRECISE_LOCATION_OVERRIDES[normalized]
+
+    precise_location = _is_precise_korean_location(normalized)
+
+    # 동/읍/면/리 단위는 먼저 전체 주소 그대로 Nominatim에서 찾는다.
+    # 성공 시 사용자가 입력한 상세 행정구역명을 화면에 그대로 유지한다.
+    if precise_location:
+        try:
+            resp = requests.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={
+                    "q": normalized,
+                    "format": "jsonv2",
+                    "addressdetails": 1,
+                    "limit": 10,
+                    "countrycodes": "kr",
+                    "accept-language": "ko",
+                },
+                headers={"User-Agent": "TennisTimeWeatherApp/0.9.4 (weather app)"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            for r in resp.json():
+                display_name = str(r.get("display_name") or "")
+                if all(_token_in_display(token, display_name) for token in normalized.split()):
+                    return float(r["lat"]), float(r["lon"]), normalized
+        except (requests.RequestException, ValueError, TypeError, KeyError):
+            pass
+
+        # Open-Meteo는 '<지역명>, <광역행정구역>' 형식을 지원하므로
+        # 상세 지역명을 마지막 토큰으로 분리해 한 번 더 정확히 조회한다.
+        tokens = normalized.split()
+        locality = tokens[-1]
+        first = tokens[0]
+        admin1_aliases = {
+            "대구": "대구광역시", "대구광역시": "대구광역시",
+            "서울": "서울특별시", "서울특별시": "서울특별시",
+            "부산": "부산광역시", "부산광역시": "부산광역시",
+            "인천": "인천광역시", "인천광역시": "인천광역시",
+            "광주": "광주광역시", "광주광역시": "광주광역시",
+            "대전": "대전광역시", "대전광역시": "대전광역시",
+            "울산": "울산광역시", "울산광역시": "울산광역시",
+            "세종": "세종특별자치시", "세종특별자치시": "세종특별자치시",
+        }
+        admin1 = admin1_aliases.get(first)
+        if admin1:
+            try:
+                resp = requests.get(
+                    "https://geocoding-api.open-meteo.com/v1/search",
+                    params={
+                        "name": f"{locality}, {admin1}",
+                        "count": 20,
+                        "language": "ko",
+                        "format": "json",
+                        "countryCode": "KR",
+                    },
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                for r in resp.json().get("results") or []:
+                    result_name = str(r.get("name") or "")
+                    result_admin1 = str(r.get("admin1") or "")
+                    if locality in result_name and _token_in_display(first, result_admin1):
+                        return float(r["latitude"]), float(r["longitude"]), normalized
+            except (requests.RequestException, ValueError, TypeError, KeyError):
+                pass
+
+        # 상세 주소를 요청했는데 시 단위로 축약해 성공 처리하지 않는다.
+        return None, None, None
 
     candidates = _location_candidates(location)
 
@@ -237,7 +340,7 @@ def geocode(location: str):
             continue
 
     nominatim_url = "https://nominatim.openstreetmap.org/search"
-    headers = {"User-Agent": "TennisTimeWeatherApp/0.9.2 (weather app)"}
+    headers = {"User-Agent": "TennisTimeWeatherApp/0.9.4 (weather app)"}
     for query in candidates:
         try:
             resp = requests.get(
@@ -632,4 +735,4 @@ else:
     )
 
 st.markdown("---")
-st.caption("Tennis Time Weather v0.9.3 — Open-Meteo 기반")
+st.caption("Tennis Time Weather v0.9.4 — Open-Meteo 기반")
