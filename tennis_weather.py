@@ -140,7 +140,7 @@ with st.sidebar:
     )
 
     st.divider()
-    st.caption("v0.9.2 — Open-Meteo 기반")
+    st.caption("v0.9.3 — Open-Meteo 기반")
 
 
 # =========================================================
@@ -194,6 +194,19 @@ def _result_matches_major_city(result: dict, requested_location: str) -> bool:
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def geocode(location: str):
+    normalized = " ".join(location.strip().split())
+
+    # 산격동은 동명 지역 오선택을 막기 위해 정확한 행정구역으로 고정한다.
+    # 날씨 조회에는 산격동 내부의 대표 좌표를 사용한다.
+    sangyeok_aliases = {
+        "대구광역시 북구 산격동",
+        "대구 북구 산격동",
+        "북구 산격동",
+        "산격동",
+    }
+    if normalized in sangyeok_aliases:
+        return 35.8998232, 128.6063565, "대구광역시 북구 산격동"
+
     candidates = _location_candidates(location)
 
     open_meteo_url = "https://geocoding-api.open-meteo.com/v1/search"
@@ -619,4 +632,4 @@ else:
     )
 
 st.markdown("---")
-st.caption("Tennis Time Weather v0.9.2 — Open-Meteo 기반")
+st.caption("Tennis Time Weather v0.9.3 — Open-Meteo 기반")
