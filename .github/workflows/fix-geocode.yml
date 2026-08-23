@@ -1,0 +1,156 @@
+name: Apply geocoding city-match fix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-geocode.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch geocoding logic
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tennis_weather.py')
+          text = path.read_text(encoding='utf-8')
+
+          start = text.index('def _location_candidates(location: str) -> list[str]:')
+          end = text.index('\n\n@st.cache_data(ttl=1800, show_spinner=False)\ndef fetch_open_meteo', start)
+
+          replacement = r'''MAJOR_CITY_RULES = {
+              "서울": {"query": "Seoul", "admin1": {"서울", "서울특별시", "seoul"}},
+              "부산": {"query": "Busan", "admin1": {"부산", "부산광역시", "busan"}},
+              "대구": {"query": "Daegu", "admin1": {"대구", "대구광역시", "daegu"}},
+              "인천": {"query": "Incheon", "admin1": {"인천", "인천광역시", "incheon"}},
+              "광주": {"query": "Gwangju", "admin1": {"광주", "광주광역시", "gwangju"}},
+              "대전": {"query": "Daejeon", "admin1": {"대전", "대전광역시", "daejeon"}},
+              "울산": {"query": "Ulsan", "admin1": {"울산", "울산광역시", "ulsan"}},
+              "세종": {"query": "Sejong", "admin1": {"세종", "세종특별자치시", "sejong"}},
+          }
+
+
+          def _location_candidates(location: str) -> list[str]:
+              clean = " ".join(location.strip().split())
+              if not clean:
+                  return []
+
+              parts = clean.split()
+              candidates = [clean]
+              for i in range(len(parts) - 1, 0, -1):
+                  candidate = " ".join(parts[:i])
+                  if candidate not in candidates:
+                      candidates.append(candidate)
+
+              rule = MAJOR_CITY_RULES.get(parts[0])
+              if rule and rule["query"] not in candidates:
+                  candidates.append(rule["query"])
+              return candidates
+
+
+          def _result_matches_major_city(result: dict, requested_location: str) -> bool:
+              first_token = requested_location.strip().split()[0] if requested_location.strip() else ""
+              rule = MAJOR_CITY_RULES.get(first_token)
+              if not rule:
+                  return True
+
+              admin1 = str(result.get("admin1") or "").strip().lower()
+              name = str(result.get("name") or "").strip().lower()
+              expected = {value.lower() for value in rule["admin1"]}
+
+              if admin1:
+                  return admin1 in expected
+              return name in expected
+
+
+          @st.cache_data(ttl=86400, show_spinner=False)
+          def geocode(location: str):
+              candidates = _location_candidates(location)
+
+              open_meteo_url = "https://geocoding-api.open-meteo.com/v1/search"
+              for query in candidates:
+                  try:
+                      resp = requests.get(
+                          open_meteo_url,
+                          params={
+                              "name": query,
+                              "count": 20,
+                              "language": "ko",
+                              "format": "json",
+                              "countryCode": "KR",
+                          },
+                          timeout=10,
+                      )
+                      resp.raise_for_status()
+                      results = resp.json().get("results") or []
+                      for r in results:
+                          if not _result_matches_major_city(r, location):
+                              continue
+                          place_name = r.get("name") or query
+                          admin1 = r.get("admin1")
+                          if admin1 and admin1 not in place_name:
+                              place_name = f"{admin1} {place_name}"
+                          return float(r["latitude"]), float(r["longitude"]), place_name
+                  except (requests.RequestException, ValueError, TypeError, KeyError):
+                      continue
+
+              nominatim_url = "https://nominatim.openstreetmap.org/search"
+              headers = {"User-Agent": "TennisTimeWeatherApp/0.9.2 (weather app)"}
+              for query in candidates:
+                  try:
+                      resp = requests.get(
+                          nominatim_url,
+                          params={
+                              "q": query,
+                              "format": "json",
+                              "limit": 5,
+                              "countrycodes": "kr",
+                          },
+                          headers=headers,
+                          timeout=10,
+                      )
+                      resp.raise_for_status()
+                      results = resp.json()
+                      for r in results:
+                          first_token = location.strip().split()[0] if location.strip() else ""
+                          rule = MAJOR_CITY_RULES.get(first_token)
+                          if rule:
+                              display_name = str(r.get("display_name") or "").lower()
+                              expected = {value.lower() for value in rule["admin1"]}
+                              if not any(value in display_name for value in expected):
+                                  continue
+                          return (
+                              float(r["lat"]),
+                              float(r["lon"]),
+                              r.get("display_name", query).split(",")[0],
+                          )
+                  except (requests.RequestException, ValueError, TypeError, KeyError):
+                      continue
+
+              return None, None, None'''
+
+          text = text[:start] + replacement + text[end:]
+          text = text.replace('v0.9.1 — Open-Meteo 기반', 'v0.9.2 — Open-Meteo 기반')
+          text = text.replace('Tennis Time Weather v0.9.1 — Open-Meteo 기반', 'Tennis Time Weather v0.9.2 — Open-Meteo 기반')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verify syntax
+        run: python -m py_compile tennis_weather.py
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tennis_weather.py
+          git commit -m "Fix major-city geocoding selection"
+          git push
