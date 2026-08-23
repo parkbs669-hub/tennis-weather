@@ -1,0 +1,50 @@
+name: Apply detailed Korean geocoding fix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-detailed-geocode.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch detailed Korean location handling
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tennis_weather.py')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''@st.cache_data(ttl=86400, show_spinner=False)\ndef geocode(location: str):\n    normalized = " ".join(location.strip().split())\n\n    # 산격동은 동명 지역 오선택을 막기 위해 정확한 행정구역으로 고정한다.\n    # 날씨 조회에는 산격동 내부의 대표 좌표를 사용한다.\n    sangyeok_aliases = {\n        "대구광역시 북구 산격동",\n        "대구 북구 산격동",\n        "북구 산격동",\n        "산격동",\n    }\n    if normalized in sangyeok_aliases:\n        return 35.8998232, 128.6063565, "대구광역시 북구 산격동"\n\n    candidates = _location_candidates(location)\n'''
+
+          new = '''PRECISE_LOCATION_OVERRIDES = {\n    "대구광역시 북구 산격동": (35.8998232, 128.6063565, "대구광역시 북구 산격동"),\n    "대구 북구 산격동": (35.8998232, 128.6063565, "대구광역시 북구 산격동"),\n    "북구 산격동": (35.8998232, 128.6063565, "대구광역시 북구 산격동"),\n    "산격동": (35.8998232, 128.6063565, "대구광역시 북구 산격동"),\n    "대구광역시 북구 칠성동": (35.8766763, 128.5963907, "대구광역시 북구 칠성동"),\n    "대구 북구 칠성동": (35.8766763, 128.5963907, "대구광역시 북구 칠성동"),\n    "북구 칠성동": (35.8766763, 128.5963907, "대구광역시 북구 칠성동"),\n    "칠성동": (35.8766763, 128.5963907, "대구광역시 북구 칠성동"),\n}\n\n\ndef _is_precise_korean_location(location: str) -> bool:\n    tokens = location.split()\n    return any(\n        token.endswith(("동", "읍", "면", "리", "가"))\n        for token in tokens\n    )\n\n\ndef _token_in_display(token: str, display_name: str) -> bool:\n    aliases = {\n        "대구광역시": ("대구광역시", "대구", "daegu"),\n        "대구": ("대구광역시", "대구", "daegu"),\n        "서울특별시": ("서울특별시", "서울", "seoul"),\n        "서울": ("서울특별시", "서울", "seoul"),\n        "부산광역시": ("부산광역시", "부산", "busan"),\n        "부산": ("부산광역시", "부산", "busan"),\n        "인천광역시": ("인천광역시", "인천", "incheon"),\n        "인천": ("인천광역시", "인천", "incheon"),\n        "광주광역시": ("광주광역시", "광주", "gwangju"),\n        "광주": ("광주광역시", "광주", "gwangju"),\n        "대전광역시": ("대전광역시", "대전", "daejeon"),\n        "대전": ("대전광역시", "대전", "daejeon"),\n        "울산광역시": ("울산광역시", "울산", "ulsan"),\n        "울산": ("울산광역시", "울산", "ulsan"),\n        "세종특별자치시": ("세종특별자치시", "세종", "sejong"),\n        "세종": ("세종특별자치시", "세종", "sejong"),\n    }\n    haystack = display_name.lower()\n    return any(value.lower() in haystack for value in aliases.get(token, (token,)))\n\n\n@st.cache_data(ttl=86400, show_spinner=False)\ndef geocode(location: str):\n    normalized = " ".join(location.strip().split())\n\n    if normalized in PRECISE_LOCATION_OVERRIDES:\n        return PRECISE_LOCATION_OVERRIDES[normalized]\n\n    precise_location = _is_precise_korean_location(normalized)\n\n    # 동/읍/면/리 단위는 먼저 전체 주소 그대로 Nominatim에서 찾는다.\n    # 성공 시 사용자가 입력한 상세 행정구역명을 화면에 그대로 유지한다.\n    if precise_location:\n        try:\n            resp = requests.get(\n                "https://nominatim.openstreetmap.org/search",\n                params={\n                    "q": normalized,\n                    "format": "jsonv2",\n                    "addressdetails": 1,\n                    "limit": 10,\n                    "countrycodes": "kr",\n                    "accept-language": "ko",\n                },\n                headers={"User-Agent": "TennisTimeWeatherApp/0.9.4 (weather app)"},\n                timeout=10,\n            )\n            resp.raise_for_status()\n            for r in resp.json():\n                display_name = str(r.get("display_name") or "")\n                if all(_token_in_display(token, display_name) for token in normalized.split()):\n                    return float(r["lat"]), float(r["lon"]), normalized\n        except (requests.RequestException, ValueError, TypeError, KeyError):\n            pass\n\n        # Open-Meteo는 '<지역명>, <광역행정구역>' 형식을 지원하므로\n        # 상세 지역명을 마지막 토큰으로 분리해 한 번 더 정확히 조회한다.\n        tokens = normalized.split()\n        locality = tokens[-1]\n        first = tokens[0]\n        admin1_aliases = {\n            "대구": "대구광역시", "대구광역시": "대구광역시",\n            "서울": "서울특별시", "서울특별시": "서울특별시",\n            "부산": "부산광역시", "부산광역시": "부산광역시",\n            "인천": "인천광역시", "인천광역시": "인천광역시",\n            "광주": "광주광역시", "광주광역시": "광주광역시",\n            "대전": "대전광역시", "대전광역시": "대전광역시",\n            "울산": "울산광역시", "울산광역시": "울산광역시",\n            "세종": "세종특별자치시", "세종특별자치시": "세종특별자치시",\n        }\n        admin1 = admin1_aliases.get(first)\n        if admin1:\n            try:\n                resp = requests.get(\n                    "https://geocoding-api.open-meteo.com/v1/search",\n                    params={\n                        "name": f"{locality}, {admin1}",\n                        "count": 20,\n                        "language": "ko",\n                        "format": "json",\n                        "countryCode": "KR",\n                    },\n                    timeout=10,\n                )\n                resp.raise_for_status()\n                for r in resp.json().get("results") or []:\n                    result_name = str(r.get("name") or "")\n                    result_admin1 = str(r.get("admin1") or "")\n                    if locality in result_name and _token_in_display(first, result_admin1):\n                        return float(r["latitude"]), float(r["longitude"]), normalized\n            except (requests.RequestException, ValueError, TypeError, KeyError):\n                pass\n\n        # 상세 주소를 요청했는데 시 단위로 축약해 성공 처리하지 않는다.\n        return None, None, None\n\n    candidates = _location_candidates(location)\n'''
+
+          if old not in text:
+              raise SystemExit('expected geocode block not found')
+
+          text = text.replace(old, new, 1)
+          text = text.replace('v0.9.3 — Open-Meteo 기반', 'v0.9.4 — Open-Meteo 기반')
+          text = text.replace('Tennis Time Weather v0.9.3 — Open-Meteo 기반', 'Tennis Time Weather v0.9.4 — Open-Meteo 기반')
+          text = text.replace('headers = {"User-Agent": "TennisTimeWeatherApp/0.9.2 (weather app)"}', 'headers = {"User-Agent": "TennisTimeWeatherApp/0.9.4 (weather app)"}')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verify syntax
+        run: python -m py_compile tennis_weather.py
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tennis_weather.py
+          git commit -m "Improve detailed Korean location resolution"
+          git push
