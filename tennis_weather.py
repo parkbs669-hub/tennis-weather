@@ -140,15 +140,26 @@ with st.sidebar:
     )
 
     st.divider()
-    st.caption("v0.9.1 — Open-Meteo 기반")
+    st.caption("v0.9.2 — Open-Meteo 기반")
 
 
 # =========================================================
 # 위치 변환
 # Open-Meteo Geocoding을 우선 사용하고, 실패할 때만 Nominatim을 사용한다.
 # =========================================================
+MAJOR_CITY_RULES = {
+    "서울": {"query": "Seoul", "admin1": {"서울", "서울특별시", "seoul"}},
+    "부산": {"query": "Busan", "admin1": {"부산", "부산광역시", "busan"}},
+    "대구": {"query": "Daegu", "admin1": {"대구", "대구광역시", "daegu"}},
+    "인천": {"query": "Incheon", "admin1": {"인천", "인천광역시", "incheon"}},
+    "광주": {"query": "Gwangju", "admin1": {"광주", "광주광역시", "gwangju"}},
+    "대전": {"query": "Daejeon", "admin1": {"대전", "대전광역시", "daejeon"}},
+    "울산": {"query": "Ulsan", "admin1": {"울산", "울산광역시", "ulsan"}},
+    "세종": {"query": "Sejong", "admin1": {"세종", "세종특별자치시", "sejong"}},
+}
+
+
 def _location_candidates(location: str) -> list[str]:
-    """상세 주소가 검색되지 않을 때 상위 지역으로 단계적으로 축약한다."""
     clean = " ".join(location.strip().split())
     if not clean:
         return []
@@ -159,16 +170,32 @@ def _location_candidates(location: str) -> list[str]:
         candidate = " ".join(parts[:i])
         if candidate not in candidates:
             candidates.append(candidate)
+
+    rule = MAJOR_CITY_RULES.get(parts[0])
+    if rule and rule["query"] not in candidates:
+        candidates.append(rule["query"])
     return candidates
+
+
+def _result_matches_major_city(result: dict, requested_location: str) -> bool:
+    first_token = requested_location.strip().split()[0] if requested_location.strip() else ""
+    rule = MAJOR_CITY_RULES.get(first_token)
+    if not rule:
+        return True
+
+    admin1 = str(result.get("admin1") or "").strip().lower()
+    name = str(result.get("name") or "").strip().lower()
+    expected = {value.lower() for value in rule["admin1"]}
+
+    if admin1:
+        return admin1 in expected
+    return name in expected
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def geocode(location: str):
     candidates = _location_candidates(location)
 
-    # 1) Open-Meteo 공식 Geocoding API
-    # 날씨 API와 같은 서비스 계열을 사용해 Streamlit Cloud 등에서
-    # Nominatim 접속 제한이 발생해도 위치 검색이 가능하게 한다.
     open_meteo_url = "https://geocoding-api.open-meteo.com/v1/search"
     for query in candidates:
         try:
@@ -176,7 +203,7 @@ def geocode(location: str):
                 open_meteo_url,
                 params={
                     "name": query,
-                    "count": 10,
+                    "count": 20,
                     "language": "ko",
                     "format": "json",
                     "countryCode": "KR",
@@ -185,8 +212,9 @@ def geocode(location: str):
             )
             resp.raise_for_status()
             results = resp.json().get("results") or []
-            if results:
-                r = results[0]
+            for r in results:
+                if not _result_matches_major_city(r, location):
+                    continue
                 place_name = r.get("name") or query
                 admin1 = r.get("admin1")
                 if admin1 and admin1 not in place_name:
@@ -195,9 +223,8 @@ def geocode(location: str):
         except (requests.RequestException, ValueError, TypeError, KeyError):
             continue
 
-    # 2) 보조 fallback: OpenStreetMap Nominatim
     nominatim_url = "https://nominatim.openstreetmap.org/search"
-    headers = {"User-Agent": "TennisTimeWeatherApp/0.9.1 (weather app)"}
+    headers = {"User-Agent": "TennisTimeWeatherApp/0.9.2 (weather app)"}
     for query in candidates:
         try:
             resp = requests.get(
@@ -205,7 +232,7 @@ def geocode(location: str):
                 params={
                     "q": query,
                     "format": "json",
-                    "limit": 1,
+                    "limit": 5,
                     "countrycodes": "kr",
                 },
                 headers=headers,
@@ -213,8 +240,14 @@ def geocode(location: str):
             )
             resp.raise_for_status()
             results = resp.json()
-            if results:
-                r = results[0]
+            for r in results:
+                first_token = location.strip().split()[0] if location.strip() else ""
+                rule = MAJOR_CITY_RULES.get(first_token)
+                if rule:
+                    display_name = str(r.get("display_name") or "").lower()
+                    expected = {value.lower() for value in rule["admin1"]}
+                    if not any(value in display_name for value in expected):
+                        continue
                 return (
                     float(r["lat"]),
                     float(r["lon"]),
@@ -224,7 +257,6 @@ def geocode(location: str):
             continue
 
     return None, None, None
-
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_open_meteo(lat: float, lon: float) -> dict | None:
@@ -587,4 +619,4 @@ else:
     )
 
 st.markdown("---")
-st.caption("Tennis Time Weather v0.9.1 — Open-Meteo 기반")
+st.caption("Tennis Time Weather v0.9.2 — Open-Meteo 기반")
